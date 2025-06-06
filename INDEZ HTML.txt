@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Metas para PWA -->
+    <meta name="theme-color" content="#2D3748"/>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <title>Simulador de Escáner Wi-Fi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .signal-bars { display: flex; align-items: flex-end; gap: 2px; height: 20px; }
+        .signal-bars .bar { width: 4px; background-color: #4A5568; border-radius: 2px; }
+        .signal-bars .bar.active { background-color: #48BB78; }
+        .signal-bars .bar:nth-child(1) { height: 25%; }
+        .signal-bars .bar:nth-child(2) { height: 50%; }
+        .signal-bars .bar:nth-child(3) { height: 75%; }
+        .signal-bars .bar:nth-child(4) { height: 100%; }
+        @keyframes scan-animation { 0% { width: 0%; } 90% { width: 100%; } 100% { width: 100%; } }
+        .scanner-bar { animation: scan-animation 2s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white antialiased">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-2xl">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-cyan-400">Simulador Wi-Fi</h1>
+            <p class="text-gray-400 mt-2">Esta es una PWA y no se conecta a redes reales.</p>
+        </header>
+
+        <div class="bg-gray-800 rounded-xl shadow-lg p-6">
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                <h2 class="text-xl font-semibold">Redes Disponibles</h2>
+                <button id="scan-button" class="w-full sm:w-auto bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5a10.5 10.5 0 0 1 10.5-10.5"/><path d="M2 5.5a17.5 17.5 0 0 1 17.5-17.5"/><path d="M2 19.5A24.5 24.5 0 0 1 21.5-5"/><circle cx="7" cy="17" r="1"/></svg>
+                    Buscar Redes
+                </button>
+            </div>
+
+            <div id="scanner-progress" class="hidden h-2 bg-gray-700 rounded-full overflow-hidden mb-4">
+                <div class="bg-cyan-400 h-full rounded-full scanner-bar"></div>
+            </div>
+
+            <div id="network-list" class="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+                <p class="text-gray-500 text-center py-8">Presiona "Buscar Redes" para empezar.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para mensajes -->
+    <div id="message-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center p-4">
+        <div class="bg-gray-800 rounded-xl shadow-2xl p-8 max-w-sm w-full text-center border border-gray-700">
+            <div id="modal-icon" class="mx-auto mb-4"></div>
+            <h3 id="modal-title" class="text-2xl font-bold mb-2"></h3>
+            <p id="modal-message" class="text-gray-300 mb-6"></p>
+            <button id="modal-close" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg transition-colors duration-300">Entendido</button>
+        </div>
+    </div>
+
+    <script>
+        // Registra el Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').then(registration => {
+                    console.log('ServiceWorker registrado con éxito:', registration.scope);
+                }, err => {
+                    console.log('Registro de ServiceWorker fallido:', err);
+                });
+            });
+        }
+        
+        // El resto del código JS de la aplicación va aquí (sin cambios)
+        const scanButton = document.getElementById('scan-button');
+        const networkList = document.getElementById('network-list');
+        const scannerProgress = document.getElementById('scanner-progress');
+        const modal = document.getElementById('message-modal');
+        const modalIcon = document.getElementById('modal-icon');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const modalClose = document.getElementById('modal-close');
+
+        const networkNames = [
+            "Casa_Familia_Garcia", "INFINITUM_A3B8", "Totalplay-2.4G", "Oficina_Principal",
+            "AndroidAP", "iPhone de Juan", "HP-Print-E4-OfficeJet", "VECINO_5G_PLUS",
+            "Invitados_Empresa", "Cafe_Internet_Gratis", "SAMSUNG_SmartTV", "Red_Oculta"
+        ];
+        const securityTypes = ["WPA2", "WPA3", "WPA2", "WEP", "OPEN", "WPA2"];
+
+        function generateRandomNetwork() {
+            const name = networkNames[Math.floor(Math.random() * networkNames.length)];
+            const ssid = `${name}_${Math.random().toString(36).substring(2, 6)}`;
+            const signal = Math.floor(Math.random() * 90) + 10;
+            const security = securityTypes[Math.floor(Math.random() * securityTypes.length)];
+            return { ssid, signal, security };
+        }
+
+        function getSignalStrengthBars(signal) {
+            let bars = '';
+            const activeBars = Math.ceil(signal / 25);
+            for (let i = 1; i <= 4; i++) {
+                bars += `<div class="bar ${i <= activeBars ? 'active' : ''}"></div>`;
+            }
+            const barContainer = document.createElement('div');
+            barContainer.className = 'signal-bars';
+            barContainer.innerHTML = bars;
+            const activeDivs = barContainer.querySelectorAll('.bar.active');
+            if (signal < 30) {
+                activeDivs.forEach(b => b.style.backgroundColor = '#E53E3E');
+            } else if (signal < 65) {
+                activeDivs.forEach(b => b.style.backgroundColor = '#DD6B20');
+            }
+            return barContainer.outerHTML;
+        }
+
+        function getSecurityIcon(security) {
+            if (security === "OPEN") {
+                return `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-400"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`;
+            }
+            return `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-400"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`;
+        }
+        
+        function renderNetworks() {
+            networkList.innerHTML = '';
+            const networks = new Array(Math.floor(Math.random() * 5) + 5)
+                .fill(0)
+                .map(generateRandomNetwork)
+                .sort((a, b) => b.signal - a.signal);
+
+            networks.forEach(net => {
+                const networkElement = document.createElement('div');
+                networkElement.className = 'bg-gray-700/50 p-4 rounded-lg flex items-center gap-4 hover:bg-gray-700/80 transition-colors duration-200';
+                networkElement.innerHTML = `
+                    <div class="flex-shrink-0">${getSecurityIcon(net.security)}</div>
+                    <div class="flex-grow">
+                        <p class="font-semibold text-white">${net.ssid}</p>
+                        <p class="text-sm text-gray-400">Seguridad: ${net.security}</p>
+                    </div>
+                    <div class="flex-shrink-0 mr-4">${getSignalStrengthBars(net.signal)}</div>
+                    <button data-ssid="${net.ssid}" data-security="${net.security}" class="connect-btn flex-shrink-0 bg-gray-600 hover:bg-cyan-600 text-white font-bold py-1 px-3 text-sm rounded-md transition-colors duration-300">Conectar</button>
+                `;
+                networkList.appendChild(networkElement);
+            });
+        }
+        
+        function showMessage(type, networkName) {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            if (type === 'success') {
+                modalIcon.innerHTML = `<svg class="w-16 h-16 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+                modalTitle.textContent = '¡Conexión Exitosa!';
+                modalTitle.className = 'text-2xl font-bold mb-2 text-green-400';
+                modalMessage.textContent = `Conectado a la red abierta "${networkName}". En una situación real, tu dispositivo ahora tendría acceso.`;
+            } else {
+                modalIcon.innerHTML = `<svg class="w-16 h-16 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0-10.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.75c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.249-8.25-3.286zm0 13.036h.008v.008H12v-.008z" /></svg>`;
+                modalTitle.textContent = 'Conexión Fallida';
+                modalTitle.className = 'text-2xl font-bold mb-2 text-red-400';
+                modalMessage.textContent = `La red "${networkName}" está protegida. Se requiere una contraseña para conectar.`;
+            }
+        }
+        scanButton.addEventListener('click', () => {
+            scannerProgress.classList.remove('hidden');
+            scannerProgress.innerHTML = scannerProgress.innerHTML;
+            networkList.innerHTML = `<p class="text-gray-400 text-center py-8">Buscando redes cercanas...</p>`;
+            scanButton.disabled = true;
+            setTimeout(() => {
+                renderNetworks();
+                scannerProgress.classList.add('hidden');
+                scanButton.disabled = false;
+            }, 2000);
+        });
+        networkList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('connect-btn')) {
+                const security = e.target.dataset.security;
+                const ssid = e.target.dataset.ssid;
+                if (security === 'OPEN') {
+                    showMessage('success', ssid);
+                } else {
+                    showMessage('error', ssid);
+                }
+            }
+        });
+        modalClose.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        });
+    </script>
+</body>
+</html>

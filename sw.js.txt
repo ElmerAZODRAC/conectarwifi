@@ -1,0 +1,34 @@
+const CACHE_NAME = 'wifi-simulator-cache-v1';
+const urlsToCache = [
+  '/',
+  '/index.html',
+  // No es necesario cachear los estilos de tailwind ni las fuentes, 
+  // ya que la PWA los obtendrá de internet la primera vez.
+  // Podrías añadir aquí los iconos si los tuvieras.
+];
+
+self.addEventListener('install', event => {
+  // Realiza los pasos de instalación
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        console.log('Cache abierta');
+        return cache.addAll(urlsToCache);
+      })
+  );
+});
+
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => {
+        // Si se encuentra en caché, lo devuelve
+        if (response) {
+          return response;
+        }
+        // Si no, lo busca en la red
+        return fetch(event.request);
+      }
+    )
+  );
+});
